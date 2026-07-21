@@ -8,4 +8,4 @@ namespace matching_engine::core {
     using Price = std::int64_t;
     using Quantity = std::uint32_t;
     using TimeStamp = std::uint64_t;
-} // namespace matching_engine
+} // namespace matching_engine::core
