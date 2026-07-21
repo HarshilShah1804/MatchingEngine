@@ -9,4 +9,4 @@ namespace matching_engine::core {
         Price execution_price {};
         Quantity quantitiy {};
     };
-} // namespace matching_engine
+} // namespace matching_engine::core

@@ -17,4 +17,4 @@ namespace matching_engine::core {
         Filled,
         Cancelled
     };
-} // namespace matching_engine
+} // namespace matching_engine::core

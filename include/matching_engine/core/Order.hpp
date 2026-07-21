@@ -17,4 +17,4 @@ namespace matching_engine::core {
         Order *prev {nullptr};
         Order *next {nullptr};
     };
-} // namespace matching_engine
+} // namespace matching_engine::core
