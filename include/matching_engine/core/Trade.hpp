@@ -7,6 +7,6 @@ namespace matching_engine::core {
         OrderID buy_order {};
         OrderID sell_order {};
         Price execution_price {};
-        Quantity quantitiy {};
+        Quantity quantity {};
     };
 } // namespace matching_engine::core
