@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(matching_engine
     src/book/PriceLevel.cpp
+    include/matching_engine/book/OrderBook.cpp
 )
 
 target_include_directories(
