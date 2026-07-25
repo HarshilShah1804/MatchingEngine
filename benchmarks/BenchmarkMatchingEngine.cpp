@@ -87,17 +87,17 @@ std::vector<Order> generate_orders(const std::uint64_t total_orders,
     for (std::uint64_t i = 0; i < total_orders; ++i)
     {
         state = state * 6364136223846793005ULL + 1ULL;
-        const Side side = (state & 1ULL) == 0ULL ? Side::Buy : Side::Sell;
+        const Side side = (i & 1ULL) == 0ULL ? Side::Buy : Side::Sell;
 
-        const SymbolID symbol = static_cast<SymbolID>((i % symbol_count) + 1U);
+        const SymbolID symbol = static_cast<SymbolID>(((i / 2ULL) % symbol_count) + 1U);
 
-        // Keep prices in a narrow band to force frequent crossing and trades.
+        // Overlapping price band per symbol to ensure frequent matching
         state = state * 6364136223846793005ULL + 1ULL;
-        const Price price_offset = static_cast<Price>(state % 20ULL);
+        const Price price_offset = static_cast<Price>(state % 6ULL);
         const Price base_price = 10'000;
         const Price price = side == Side::Buy
-            ? (base_price - price_offset)
-            : (base_price - 10 + price_offset);
+            ? (base_price + price_offset)
+            : (base_price - 2 + price_offset);
 
         state = state * 6364136223846793005ULL + 1ULL;
         const Quantity qty = static_cast<Quantity>((state % 10ULL) + 1ULL);
@@ -109,9 +109,10 @@ std::vector<Order> generate_orders(const std::uint64_t total_orders,
 }
 
 [[nodiscard]]
-BenchmarkResult run_single_thread(std::vector<Order>& orders)
+BenchmarkResult run_single_thread(std::vector<Order>& orders,
+                                   const std::size_t symbol_count)
 {
-    MatchingEngine engine;
+    std::vector<MatchingEngine> engines(symbol_count);
     BenchmarkResult result;
     result.processed_orders = static_cast<std::uint64_t>(orders.size());
 
@@ -119,7 +120,8 @@ BenchmarkResult run_single_thread(std::vector<Order>& orders)
 
     for (Order& order : orders)
     {
-        auto trades = engine.submit(&order);
+        const std::size_t idx = static_cast<std::size_t>(order.symbol - 1U) % symbol_count;
+        auto trades = engines[idx].submit(&order);
         result.trades += static_cast<std::uint64_t>(trades.size());
         for (const auto& trade : trades)
         {
@@ -130,16 +132,19 @@ BenchmarkResult run_single_thread(std::vector<Order>& orders)
     const auto end = std::chrono::steady_clock::now();
 
     result.seconds = std::chrono::duration<double>(end - start).count();
-    result.open_orders = static_cast<std::uint64_t>(engine.order_book().size());
+    for (const auto& engine : engines)
+    {
+        result.open_orders += static_cast<std::uint64_t>(engine.order_book().size());
+    }
     return result;
 }
 
 [[nodiscard]]
 BenchmarkResult run_sharded_concurrent(std::vector<Order>& orders,
                                        const std::size_t threads,
-                                       const std::size_t shards_count)
+                                       const std::size_t symbol_count)
 {
-    std::vector<Shard> shards(shards_count);
+    std::vector<Shard> shards(symbol_count);
 
     struct WorkerStats final {
         std::uint64_t trades {0};
@@ -165,8 +170,7 @@ BenchmarkResult run_sharded_concurrent(std::vector<Order>& orders,
             {
                 Order& order = orders[i];
 
-                // Shard by symbol so each shard can progress in parallel.
-                const std::size_t shard_idx = static_cast<std::size_t>(order.symbol) % shards_count;
+                const std::size_t shard_idx = static_cast<std::size_t>(order.symbol - 1U) % symbol_count;
                 Shard& shard = shards[shard_idx];
 
                 std::lock_guard<std::mutex> lock(shard.mtx);
@@ -234,7 +238,6 @@ int main(int argc, char** argv)
 
     const std::uint32_t symbol_count = static_cast<std::uint32_t>(std::max<std::uint64_t>(1ULL, symbols_u64));
     const std::size_t threads = static_cast<std::size_t>(std::max<std::uint64_t>(1ULL, threads_u64));
-    const std::size_t shards = threads;
 
     std::cout << "Generating " << total_orders << " orders across " << symbol_count
               << " symbols...\n";
@@ -242,10 +245,10 @@ int main(int argc, char** argv)
     auto single_orders = generate_orders(total_orders, symbol_count);
     auto sharded_orders = single_orders;
 
-    const BenchmarkResult single = run_single_thread(single_orders);
+    const BenchmarkResult single = run_single_thread(single_orders, symbol_count);
     print_result("Single-thread", single);
 
-    const BenchmarkResult concurrent = run_sharded_concurrent(sharded_orders, threads, shards);
+    const BenchmarkResult concurrent = run_sharded_concurrent(sharded_orders, threads, symbol_count);
     print_result("Concurrent sharded", concurrent);
 
     if (single.seconds > 0.0 && concurrent.seconds > 0.0)
